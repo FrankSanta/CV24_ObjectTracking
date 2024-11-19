@@ -1,11 +1,19 @@
+from tracemalloc import start
 import cv2
 import math
 import numpy as np
 import threading
-import keyboard  # For key detection
+
+# import keyboard  # For key detection
+from pynput import keyboard
+
 
 class ObjectDetection:
-    def __init__(self, weights_path="../dnn_model/yolov4.weights", cfg_path="../dnn_model/yolov4.cfg"):
+    def __init__(
+        self,
+        weights_path="../dnn_model/yolov4.weights",
+        cfg_path="../dnn_model/yolov4.cfg",
+    ):
         print("Loading Object Detection")
         print("Running opencv dnn with YOLOv4")
         self.nmsThreshold = 0.4
@@ -28,7 +36,9 @@ class ObjectDetection:
         self.load_class_names()
         self.colors = np.random.uniform(0, 255, size=(80, 3))
 
-        self.model.setInputParams(size=(self.image_size, self.image_size), scale=1 / 255)
+        self.model.setInputParams(
+            size=(self.image_size, self.image_size), scale=1 / 255
+        )
 
     def load_class_names(self, classes_path="../dnn_model/classes.txt"):
         with open(classes_path, "r") as file_object:
@@ -39,7 +49,9 @@ class ObjectDetection:
         return self.classes
 
     def detect(self, frame):
-        return self.model.detect(frame, nmsThreshold=self.nmsThreshold, confThreshold=self.confThreshold)
+        return self.model.detect(
+            frame, nmsThreshold=self.nmsThreshold, confThreshold=self.confThreshold
+        )
 
 
 # Global flags and variables
@@ -54,21 +66,39 @@ trajectory = []  # List to store trajectory points
 show_trajectory = False  # Toggle to show/hide trajectory
 
 
-def key_listener():
-    """
-    Detects key presses in a separate thread and updates shared variables.
-    """
+# def key_listener():
+#     """
+#     Detects key presses in a separate thread and updates shared variables.
+#     """
+#     global f_pressed, s_pressed, exit_flag
+#     try:
+#         while not exit_flag:
+#             if keyboard.is_pressed("f"):
+#                 f_pressed = True
+#             if keyboard.is_pressed("s"):
+#                 s_pressed = True
+#             if keyboard.is_pressed("esc"):  # Allow exiting with ESC key
+#                 exit_flag = True
+#     except Exception as e:
+#         print("Exception in key_listener:", e)
+
+
+def on_press(key):
     global f_pressed, s_pressed, exit_flag
-    try:
-        while not exit_flag:
-            if keyboard.is_pressed('f'):
-                f_pressed = True
-            if keyboard.is_pressed('s'):
-                s_pressed = True
-            if keyboard.is_pressed('esc'):  # Allow exiting with ESC key
-                exit_flag = True
-    except Exception as e:
-        print("Exception in key_listener:", e)
+    key = key.char
+    if key == "f":
+        f_pressed = True
+    if key == "s":
+        s_pressed = True
+    if key == "esc":  # Allow exiting with ESC key
+        exit_flag = True
+
+
+def on_release(key):
+    print(f"Key {key} released")
+    if key == keyboard.Key.esc:
+        # Stop listener
+        return False
 
 
 def mouse_callback(event, x, y, flags, param):
@@ -93,8 +123,17 @@ def euclidean_distance(pt1, pt2):
     return math.sqrt((pt1[0] - pt2[0]) ** 2 + (pt1[1] - pt2[1]) ** 2)
 
 
-# Start the key listener thread
-key_thread = threading.Thread(target=key_listener, daemon=True)
+# Function to start the listener in a separate thread
+def start_listener():
+    with keyboard.Listener(on_press=on_press) as listener:
+        listener.join()
+
+
+# # Start the key listener thread
+# key_thread = threading.Thread(target=key_listener, daemon=True)
+# key_thread.start()
+# Start the listener
+key_thread = threading.Thread(target=start_listener, daemon=True)
 key_thread.start()
 
 # Initialize Object Detection
@@ -119,13 +158,17 @@ try:
         if f_pressed:
             f_pressed = False  # Reset flag
             object_selected = False
+            print(mouse_x, mouse_y)
 
             # Ensure the latest mouse position is updated immediately
             cv2.waitKey(1)
 
             for class_id, box in zip(class_ids, boxes):
                 cx, cy = calculate_center(box)
-                if box[0] <= mouse_x <= box[0] + box[2] and box[1] <= mouse_y <= box[1] + box[3]:
+                if (
+                    box[0] <= mouse_x <= box[0] + box[2]
+                    and box[1] <= mouse_y <= box[1] + box[3]
+                ):
                     selected_object = box
                     selected_center = (cx, cy)
                     selected_class = od.classes[class_id]  # Get the class name
@@ -143,7 +186,9 @@ try:
         # Check if 's' key was pressed
         if s_pressed:
             s_pressed = False  # Reset flag
-            if selected_object is not None:  # Only toggle if an object is being followed
+            if (
+                selected_object is not None
+            ):  # Only toggle if an object is being followed
                 show_trajectory = not show_trajectory
                 if not show_trajectory:
                     trajectory.clear()  # Clear trajectory when hiding it
@@ -178,7 +223,9 @@ try:
             color = (0, 255, 0)  # Green for the selected box
             cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
             label = f"Selected {selected_class}"
-            cv2.putText(frame, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+            cv2.putText(
+                frame, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2
+            )
         else:
             # Draw all boxes if no object is selected
             for class_id, box in zip(class_ids, boxes):
@@ -186,7 +233,15 @@ try:
                 color = od.colors[class_id]
                 cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
                 class_name = od.classes[class_id]
-                cv2.putText(frame, class_name, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                cv2.putText(
+                    frame,
+                    class_name,
+                    (x, y - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    color,
+                    2,
+                )
 
         # Draw the trajectory
         if show_trajectory and trajectory:
