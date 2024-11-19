@@ -62,20 +62,21 @@ show_trajectory = False  # Toggle to show/hide trajectory
 
 def on_press(key):
     global f_pressed, s_pressed, exit_flag
-    key = key.char
+    if key == keyboard.Key.esc: 
+        exit_flag = True
+        return False
+    try:
+        key = key.char
+    except AttributeError:
+        print(f"\n\nERROR: Special key {key} pressed\n\n")
+        exit_flag = True
+        return False
     if key == "f":
         f_pressed = True
     if key == "s":
         s_pressed = True
     if key == "esc":  # Allow exiting with ESC key
         exit_flag = True
-
-
-def on_release(key):
-    print(f"Key {key} released")
-    if key == keyboard.Key.esc:
-        # Stop listener
-        return False
 
 
 def mouse_callback(event, x, y, flags, param):
@@ -231,5 +232,6 @@ except Exception as e:
     print("Exception in main loop:", e)
 
 finally:
+    print("\n\nExiting...\n")
     cap.release()
     cv2.destroyAllWindows()
