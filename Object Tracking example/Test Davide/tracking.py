@@ -1,4 +1,3 @@
-from tracemalloc import start
 import cv2
 import math
 import numpy as np
@@ -230,7 +229,7 @@ try:
             # Draw all boxes if no object is selected
             for class_id, box in zip(class_ids, boxes):
                 x, y, w, h = box
-                color = od.colors[class_id]
+                color = (0, 0, 255)  # Red for all boxes
                 cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
                 class_name = od.classes[class_id]
                 cv2.putText(
