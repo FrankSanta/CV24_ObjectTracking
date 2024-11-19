@@ -2,10 +2,7 @@ import cv2
 import math
 import numpy as np
 import threading
-
-# import keyboard  # For key detection
 from pynput import keyboard
-
 
 class ObjectDetection:
     def __init__(
@@ -52,7 +49,6 @@ class ObjectDetection:
             frame, nmsThreshold=self.nmsThreshold, confThreshold=self.confThreshold
         )
 
-
 # Global flags and variables
 f_pressed = False
 s_pressed = False
@@ -63,24 +59,6 @@ selected_center = None  # Holds the center of the selected object (cx, cy)
 selected_class = None  # Holds the class name of the selected object
 trajectory = []  # List to store trajectory points
 show_trajectory = False  # Toggle to show/hide trajectory
-
-
-# def key_listener():
-#     """
-#     Detects key presses in a separate thread and updates shared variables.
-#     """
-#     global f_pressed, s_pressed, exit_flag
-#     try:
-#         while not exit_flag:
-#             if keyboard.is_pressed("f"):
-#                 f_pressed = True
-#             if keyboard.is_pressed("s"):
-#                 s_pressed = True
-#             if keyboard.is_pressed("esc"):  # Allow exiting with ESC key
-#                 exit_flag = True
-#     except Exception as e:
-#         print("Exception in key_listener:", e)
-
 
 def on_press(key):
     global f_pressed, s_pressed, exit_flag
@@ -127,10 +105,6 @@ def start_listener():
     with keyboard.Listener(on_press=on_press) as listener:
         listener.join()
 
-
-# # Start the key listener thread
-# key_thread = threading.Thread(target=key_listener, daemon=True)
-# key_thread.start()
 # Start the listener
 key_thread = threading.Thread(target=start_listener, daemon=True)
 key_thread.start()
