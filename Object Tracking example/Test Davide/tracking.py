@@ -3,6 +3,7 @@ import math
 import numpy as np
 import threading
 from pynput import keyboard
+from sklearn.cluster import KMeans
 
 class ObjectDetection:
     def __init__(
@@ -106,6 +107,54 @@ def start_listener():
     with keyboard.Listener(on_press=on_press) as listener:
         listener.join()
 
+def filter_lines(lines):
+    horizontal_lines = []
+    vertical_lines = []
+    for line in lines:
+        for x1, y1, x2, y2 in line:
+            # Calculate angle of the line
+            angle = np.degrees(np.arctan2(y2 - y1, x2 - x1))
+            # Classify lines based on angle
+            if abs(angle) <= 5:  # Horizontal lines (adjust threshold as needed)
+                horizontal_lines.append(line)
+            elif abs(angle) >= 65:  # Vertical lines
+                vertical_lines.append(line)
+    return horizontal_lines, vertical_lines
+
+def get_line_params(line):
+    x1, y1, x2, y2 = line[0]
+    A = y2 - y1
+    B = x1 - x2
+    C = A * x1 + B * y1
+    return A, B, -C
+
+def compute_intersection(L1, L2):
+    D = L1[0] * L2[1] - L1[1] * L2[0]
+    Dx = L1[2] * L2[1] - L1[1] * L2[2]
+    Dy = L1[0] * L2[2] - L1[2] * L2[0]
+    if D != 0:
+        x = -Dx / D
+        y = -Dy / D
+        return [x, y]
+    else:
+        return None  # Lines are parallel
+    
+
+def order_corner_points(pts):
+    # pts should be a numpy array of shape (4, 2)
+    rect = np.zeros((4, 2), dtype="float32")
+
+    # Sum and difference of points to find corners
+    s = pts.sum(axis=1)
+    diff = np.diff(pts, axis=1)
+
+    rect[0] = pts[np.argmin(s)]      # Top-left
+    rect[2] = pts[np.argmax(s)]      # Bottom-right
+    rect[1] = pts[np.argmin(diff)]   # Top-right
+    rect[3] = pts[np.argmax(diff)]   # Bottom-left
+
+    return rect
+
 # Start the listener
 key_thread = threading.Thread(target=start_listener, daemon=True)
 key_thread.start()
@@ -113,7 +162,7 @@ key_thread.start()
 # Initialize Object Detection
 od = ObjectDetection()
 
-cap = cv2.VideoCapture("../videos/los_angeles.mp4")
+cap = cv2.VideoCapture("../videos/Tennis.mp4")
 
 cv2.namedWindow("Frame")
 cv2.setMouseCallback("Frame", mouse_callback)
@@ -222,23 +271,96 @@ try:
             for point in trajectory:
                 cv2.circle(frame, point, 3, (255, 0, 0), -1)  # Blue dots for trajectory
                 
+        # Convert to grayscale
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        edges = cv2.Canny(gray, 100, 200)
-        
-        
+        # Apply Gaussian Blur
+        blur = cv2.GaussianBlur(gray, (5, 5), 0)
+        # Edge detection
+        edges = cv2.Canny(blur, 60, 160)
+            
+            
         # Apply Hough Line Transform
-        lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=150, minLineLength=50, maxLineGap=10)
-    
-        edges_colored = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
-        blended_frame = cv2.addWeighted(frame, 0.7, edges_colored, 0.3, 0)
-        
-        # Draw the detected lines on the original frame
+        lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=50, minLineLength=160, maxLineGap=10)
+        line_image = frame.copy()
         if lines is not None:
             for line in lines:
                 x1, y1, x2, y2 = line[0]
-                cv2.line(blended_frame, (x1, y1), (x2, y2), (0, 255, 0), 2) 
+                cv2.line(line_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        cv2.imshow('Detected Lines', line_image)
+        cv2.waitKey(0)
 
-        cv2.imshow("Frame with Canny and Hough", blended_frame)
+        horizontal_lines, vertical_lines = filter_lines(lines)
+        # Visualize filtered lines
+        filtered_line_image = frame.copy()
+        for line in horizontal_lines:
+            x1, y1, x2, y2 = line[0]
+            cv2.line(filtered_line_image, (x1, y1), (x2, y2), (255, 0, 0), 2)  # Blue for horizontal lines
+        for line in vertical_lines:
+            x1, y1, x2, y2 = line[0]
+            cv2.line(filtered_line_image, (x1, y1), (x2, y2), (0, 0, 255), 2)  # Red for vertical lines
+        cv2.imshow('Filtered Lines', filtered_line_image)
+        cv2.waitKey(0)
+
+
+        # Compute intersections between horizontal and vertical lines
+        intersections = []
+        for h_line in horizontal_lines:
+            L1 = get_line_params(h_line)
+            for v_line in vertical_lines:
+                L2 = get_line_params(v_line)
+                point = compute_intersection(L1, L2)
+                if point is not None and point[0] >= 50 and point[1] >= 50 and point[0] <= frame.shape[1] - 50 and point[1] <= frame.shape[0] - 50:
+                    intersections.append(point)
+
+        # Visualize intersections
+        intersection_image = frame.copy()
+        for point in intersections:
+            x, y = map(int, point)
+            cv2.circle(intersection_image, (x, y), 5, (255, 0, 0), -1)
+        cv2.imshow('Intersections', intersection_image)
+        cv2.waitKey(0)
+
+        # Cluster intersections to find four corners
+        points = np.array(intersections)
+        if len(points) >= 4:
+            kmeans = KMeans(n_clusters=4, random_state=0).fit(points)
+            corner_points = kmeans.cluster_centers_
+
+            # Visualize clustered corners
+            cluster_image = frame.copy()
+            colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0)]
+            labels = kmeans.labels_
+            for idx, point in enumerate(points):
+                x, y = map(int, point)
+                cluster_idx = labels[idx]
+                cv2.circle(cluster_image, (x, y), 5, colors[cluster_idx], -1)
+            for idx, center in enumerate(corner_points):
+                x, y = map(int, center)
+                cv2.circle(cluster_image, (x, y), 10, colors[idx], 2)
+            cv2.imshow('Clustered Corners', cluster_image)
+            cv2.waitKey(0)
+
+            # Order corner points
+            src_points = order_corner_points(corner_points)
+
+            # Compute homography and warp perspective
+            width, height = 800, 400
+            dst_points = np.array([
+                [0, 0],
+                [width - 1, 0],
+                [width - 1, height - 1],
+                [0, height - 1]
+            ], dtype="float32")
+
+            homography_matrix, status = cv2.findHomography(src_points, dst_points)
+
+            rectified_frame = cv2.warpPerspective(frame, homography_matrix, (width, height))
+            cv2.imshow('Rectified Court', rectified_frame)
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
+            
+        else:
+            print("Not enough intersection points detected to compute homography.")
 
         if cv2.waitKey(1) == 27:  # ESC key for fallback exit
             exit_flag = True
