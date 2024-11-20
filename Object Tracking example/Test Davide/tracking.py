@@ -221,8 +221,24 @@ try:
         if show_trajectory and trajectory:
             for point in trajectory:
                 cv2.circle(frame, point, 3, (255, 0, 0), -1)  # Blue dots for trajectory
+                
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        edges = cv2.Canny(gray, 100, 200)
+        
+        
+        # Apply Hough Line Transform
+        lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=150, minLineLength=50, maxLineGap=10)
+    
+        edges_colored = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
+        blended_frame = cv2.addWeighted(frame, 0.7, edges_colored, 0.3, 0)
+        
+        # Draw the detected lines on the original frame
+        if lines is not None:
+            for line in lines:
+                x1, y1, x2, y2 = line[0]
+                cv2.line(blended_frame, (x1, y1), (x2, y2), (0, 255, 0), 2) 
 
-        cv2.imshow("Frame", frame)
+        cv2.imshow("Frame with Canny and Hough", blended_frame)
 
         if cv2.waitKey(1) == 27:  # ESC key for fallback exit
             exit_flag = True
