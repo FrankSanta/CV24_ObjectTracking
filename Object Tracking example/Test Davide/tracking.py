@@ -140,20 +140,37 @@ def compute_intersection(L1, L2):
         return None  # Lines are parallel
     
 
-def order_corner_points(pts):
-    # pts should be a numpy array of shape (4, 2)
-    rect = np.zeros((4, 2), dtype="float32")
+def select_corners(corner_points):
 
-    # Sum and difference of points to find corners
-    s = pts.sum(axis=1)
-    diff = np.diff(pts, axis=1)
+    corner_points = np.array(corner_points)
+    print(corner_points)
 
-    rect[0] = pts[np.argmin(s)]      # Top-left
-    rect[2] = pts[np.argmax(s)]      # Bottom-right
-    rect[1] = pts[np.argmin(diff)]   # Top-right
-    rect[3] = pts[np.argmax(diff)]   # Bottom-left
+    # Point with the lowest y and x
+    min_y_points = corner_points[corner_points[:, 1] == corner_points[:, 1].min()]
+    lowest_y_x_point = min_y_points[np.argmin(min_y_points[:, 0])]
+    print(lowest_y_x_point)
 
-    return rect
+    # Point with the highest x among those with the lowest y
+    highest_x_lowest_y_point = min_y_points[np.argmax(min_y_points[:, 0])]
+    print(highest_x_lowest_y_point)
+
+    # Point with the highest y and x
+    max_y_points = corner_points[corner_points[:, 1] == corner_points[:, 1].max()]
+    highest_y_x_point = max_y_points[np.argmax(max_y_points[:, 0])]
+    print(highest_y_x_point)
+
+    # Point with the lowest x among those with the highest y
+    lowest_x_highest_y_point = max_y_points[np.argmin(max_y_points[:, 0])]
+    print(lowest_x_highest_y_point)
+
+    selected_points = np.array([
+        lowest_y_x_point,
+        highest_x_lowest_y_point,
+        highest_y_x_point,
+        lowest_x_highest_y_point
+    ])
+
+    return selected_points
 
 # Start the listener
 key_thread = threading.Thread(target=start_listener, daemon=True)
@@ -322,13 +339,15 @@ try:
 
         # Cluster intersections to find four corners
         points = np.array(intersections)
-        if len(points) >= 4:
-            kmeans = KMeans(n_clusters=4, random_state=0).fit(points)
+
+        if len(points) >= 16:
+            
+            kmeans = KMeans(n_clusters=16, random_state=0).fit(points)
             corner_points = kmeans.cluster_centers_
 
             # Visualize clustered corners
             cluster_image = frame.copy()
-            colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0)]
+            colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0), (0, 255, 255), (255, 0, 255), (255, 255, 255), (0, 0, 0)]
             labels = kmeans.labels_
             for idx, point in enumerate(points):
                 x, y = map(int, point)
@@ -341,7 +360,8 @@ try:
             cv2.waitKey(0)
 
             # Order corner points
-            src_points = order_corner_points(corner_points)
+            print(corner_points)
+            src_points = select_corners(corner_points)
 
             # Compute homography and warp perspective
             width, height = 800, 400
