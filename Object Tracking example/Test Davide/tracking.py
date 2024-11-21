@@ -106,71 +106,6 @@ def start_listener():
     with keyboard.Listener(on_press=on_press) as listener:
         listener.join()
 
-def filter_lines(lines):
-    horizontal_lines = []
-    vertical_lines = []
-    for line in lines:
-        for x1, y1, x2, y2 in line:
-            # Calculate angle of the line
-            angle = np.degrees(np.arctan2(y2 - y1, x2 - x1))
-            # Classify lines based on angle
-            if abs(angle) <= 5:  # Horizontal lines (adjust threshold as needed)
-                horizontal_lines.append(line)
-            elif abs(angle) >= 65:  # Vertical lines
-                vertical_lines.append(line)
-    return horizontal_lines, vertical_lines
-
-def get_line_params(line):
-    x1, y1, x2, y2 = line[0]
-    A = y2 - y1
-    B = x1 - x2
-    C = A * x1 + B * y1
-    return A, B, -C
-
-def compute_intersection(L1, L2):
-    D = L1[0] * L2[1] - L1[1] * L2[0]
-    Dx = L1[2] * L2[1] - L1[1] * L2[2]
-    Dy = L1[0] * L2[2] - L1[2] * L2[0]
-    if D != 0:
-        x = -Dx / D
-        y = -Dy / D
-        return [x, y]
-    else:
-        return None  # Lines are parallel
-    
-
-def select_corners(corner_points):
-
-    corner_points = np.array(corner_points)
-    print(corner_points)
-
-    # Point with the lowest y and x
-    min_y_points = corner_points[corner_points[:, 1] == corner_points[:, 1].min()]
-    lowest_y_x_point = min_y_points[np.argmin(min_y_points[:, 0])]
-    print(lowest_y_x_point)
-
-    # Point with the highest x among those with the lowest y
-    highest_x_lowest_y_point = min_y_points[np.argmax(min_y_points[:, 0])]
-    print(highest_x_lowest_y_point)
-
-    # Point with the highest y and x
-    max_y_points = corner_points[corner_points[:, 1] == corner_points[:, 1].max()]
-    highest_y_x_point = max_y_points[np.argmax(max_y_points[:, 0])]
-    print(highest_y_x_point)
-
-    # Point with the lowest x among those with the highest y
-    lowest_x_highest_y_point = max_y_points[np.argmin(max_y_points[:, 0])]
-    print(lowest_x_highest_y_point)
-
-    selected_points = np.array([
-        lowest_y_x_point,
-        highest_x_lowest_y_point,
-        highest_y_x_point,
-        lowest_x_highest_y_point
-    ])
-
-    return selected_points
-
 # Start the listener
 key_thread = threading.Thread(target=start_listener, daemon=True)
 key_thread.start()
@@ -186,12 +121,14 @@ cv2.setMouseCallback("Frame", mouse_callback)
 try:
     while True:
         ret, frame = cap.read()
+        print("Frame read")
         if not ret or exit_flag:  # Exit loop if video ends or ESC is pressed
             break
         frame = cv2.resize(frame, (192 * 3, 144 * 3))
 
         # Detect objects on frame
         (class_ids, scores, boxes) = od.detect(frame)
+
 
         # Check if 'f' key was pressed
         if f_pressed:
@@ -203,11 +140,12 @@ try:
             cv2.waitKey(1)
 
             for class_id, box in zip(class_ids, boxes):
+                box_area = box[2] * box[3]
+                image_area = frame.shape[0] * frame.shape[1]
+                if box_area > image_area / 2:
+                    continue
                 cx, cy = calculate_center(box)
-                if (
-                    box[0] <= mouse_x <= box[0] + box[2]
-                    and box[1] <= mouse_y <= box[1] + box[3]
-                ):
+                if box[0] <= mouse_x <= box[0] + box[2] and box[1] <= mouse_y <= box[1] + box[3]:
                     selected_object = box
                     selected_center = (cx, cy)
                     selected_class = od.classes[class_id]  # Get the class name
@@ -225,9 +163,7 @@ try:
         # Check if 's' key was pressed
         if s_pressed:
             s_pressed = False  # Reset flag
-            if (
-                selected_object is not None
-            ):  # Only toggle if an object is being followed
+            if selected_object is not None:  # Only toggle if an object is being followed
                 show_trajectory = not show_trajectory
                 if not show_trajectory:
                     trajectory.clear()  # Clear trajectory when hiding it
@@ -287,9 +223,8 @@ try:
             for point in trajectory:
                 cv2.circle(frame, point, 3, (255, 0, 0), -1)  # Blue dots for trajectory
 
-        if cv2.waitKey(1) == 27:  # ESC key for fallback exit
-            exit_flag = True
-            break
+        cv2.imshow("Frame", frame)
+        cv2.waitKey(1)
 
 except Exception as e:
     print("Exception in main loop:", e)
