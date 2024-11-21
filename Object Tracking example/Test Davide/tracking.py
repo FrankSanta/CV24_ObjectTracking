@@ -7,8 +7,8 @@ from pynput import keyboard
 class ObjectDetection:
     def __init__(
         self,
-        weights_path="../dnn_model/yolov4.weights",
-        cfg_path="../dnn_model/yolov4.cfg",
+        weights_path="../dnn_model/yolov4-tiny.weights",
+        cfg_path="../dnn_model/yolov4-tiny.cfg",
     ):
         print("Loading Object Detection")
         print("Running opencv dnn with YOLOv4")
