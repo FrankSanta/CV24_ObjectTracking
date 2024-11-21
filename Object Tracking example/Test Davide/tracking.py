@@ -5,15 +5,11 @@ import threading
 from pynput import keyboard
 
 class ObjectDetection:
-    def __init__(
-        self,
-        weights_path="../dnn_model/yolov4-tiny.weights",
-        cfg_path="../dnn_model/yolov4-tiny.cfg",
-    ):
+    def __init__(self, weights_path="../dnn_model/yolov4-tiny.weights", cfg_path="../dnn_model/yolov4-tiny.cfg",):
         print("Loading Object Detection")
         print("Running opencv dnn with YOLOv4")
-        self.nmsThreshold = 0.4
-        self.confThreshold = 0.5
+        self.nmsThreshold = 0.3
+        self.confThreshold = 0.3
         self.image_size = 512
 
         # Load Network
@@ -32,9 +28,7 @@ class ObjectDetection:
         self.load_class_names()
         self.colors = np.random.uniform(0, 255, size=(80, 3))
 
-        self.model.setInputParams(
-            size=(self.image_size, self.image_size), scale=1 / 255
-        )
+        self.model.setInputParams(size=(self.image_size, self.image_size), scale=(1/255))
 
     def load_class_names(self, classes_path="../dnn_model/classes.txt"):
         with open(classes_path, "r") as file_object:
@@ -45,9 +39,7 @@ class ObjectDetection:
         return self.classes
 
     def detect(self, frame):
-        return self.model.detect(
-            frame, nmsThreshold=self.nmsThreshold, confThreshold=self.confThreshold
-        )
+        return self.model.detect(frame, nmsThreshold=self.nmsThreshold, confThreshold=self.confThreshold)
 
 # Global flags and variables
 f_pressed = False
@@ -124,6 +116,7 @@ try:
         print("Frame read")
         if not ret or exit_flag:  # Exit loop if video ends or ESC is pressed
             break
+        
         frame = cv2.resize(frame, (192 * 3, 144 * 3))
 
         # Detect objects on frame
@@ -198,9 +191,7 @@ try:
             color = (0, 255, 0)  # Green for the selected box
             cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
             label = f"Selected {selected_class}"
-            cv2.putText(
-                frame, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2
-            )
+            cv2.putText(frame, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
         else:
             # Draw all boxes if no object is selected
             for class_id, box in zip(class_ids, boxes):
@@ -208,15 +199,7 @@ try:
                 color = (0, 0, 255)  # Red for all boxes
                 cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
                 class_name = od.classes[class_id]
-                cv2.putText(
-                    frame,
-                    class_name,
-                    (x, y - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5,
-                    color,
-                    2,
-                )
+                cv2.putText(frame, class_name, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color,2,)
 
         # Draw the trajectory
         if show_trajectory and trajectory:
