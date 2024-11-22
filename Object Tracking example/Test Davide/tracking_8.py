@@ -3,20 +3,43 @@ import math
 import numpy as np
 import threading
 from pynput import keyboard
-from ultralytics import YOLO
+from ultralytics import YOLO  # Import the YOLOv8 model
 
-class AdvancedObjectDetection:
-    def __init__(self, model_path="yolov8n.pt"):
-        print("Loading YOLOv8 for Object Detection")
-        self.model = YOLO(model_path)  # Load the YOLOv8 model
+class ObjectDetection:
+    def __init__(self, model_path="../dnn_model/yolov8n.pt"):
+        print("Loading Object Detection")
+        print("Running ultralytics YOLOv8-nano")
+
+        # Load YOLOv8 model
+        self.model = YOLO(model_path)
         self.classes = self.model.names  # Class names from the model
-        self.conf_threshold = 0.5  # Confidence threshold
-        self.nms_threshold = 0.4  # NMS threshold
+        self.image_size = 512
+        self.confThreshold = 0.3
+        self.iouThreshold = 0.3
+
+        self.colors = np.random.uniform(0, 255, size=(len(self.classes), 3))
 
     def detect(self, frame):
-        # Perform detection on the frame
-        results = self.model.predict(frame, conf=self.conf_threshold, iou=self.nms_threshold, device="cpu")
-        return results
+        # Run YOLOv8 inference
+        results = self.model(frame, imgsz=self.image_size, conf=self.confThreshold, iou=self.iouThreshold)
+        
+        # Extract detection results
+        detections = results[0]  # YOLOv8 returns a list, take the first (single frame detection)
+        boxes = detections.boxes.xyxy.cpu().numpy()  # Convert to NumPy array: [x_min, y_min, x_max, y_max]
+        confidences = detections.boxes.conf.cpu().numpy()  # Confidence scores
+        class_ids = detections.boxes.cls.cpu().numpy().astype(int)  # Class IDs
+        
+        # Convert boxes to (x, y, w, h) format
+        converted_boxes = []
+        for box in boxes:
+            x_min, y_min, x_max, y_max = box
+            x = int(x_min)
+            y = int(y_min)
+            w = int(x_max - x_min)
+            h = int(y_max - y_min)
+            converted_boxes.append([x, y, w, h])
+
+        return class_ids, confidences, converted_boxes
 
 # Global flags and variables
 f_pressed = False
@@ -44,9 +67,6 @@ def on_press(key):
         f_pressed = True
     if key == "s":
         s_pressed = True
-    if key == "esc":  # Allow exiting with ESC key
-        exit_flag = True
-
 
 def mouse_callback(event, x, y, flags, param):
     """
@@ -75,12 +95,13 @@ def start_listener():
     with keyboard.Listener(on_press=on_press) as listener:
         listener.join()
 
+
 # Start the listener
 key_thread = threading.Thread(target=start_listener, daemon=True)
 key_thread.start()
 
 # Initialize Object Detection
-od = AdvancedObjectDetection()
+od = ObjectDetection()
 
 cap = cv2.VideoCapture("../videos/Tennis.mp4")
 
@@ -90,16 +111,13 @@ cv2.setMouseCallback("Frame", mouse_callback)
 try:
     while True:
         ret, frame = cap.read()
-        print("Frame read")
         if not ret or exit_flag:  # Exit loop if video ends or ESC is pressed
             break
         
         frame = cv2.resize(frame, (192 * 3, 144 * 3))
 
         # Detect objects on frame
-        
-        boxes = od.detect(frame)
-
+        class_ids, scores, boxes = od.detect(frame)
 
         # Check if 'f' key was pressed
         if f_pressed:
@@ -177,7 +195,7 @@ try:
                 color = (0, 0, 255)  # Red for all boxes
                 cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
                 class_name = od.classes[class_id]
-                cv2.putText(frame, class_name, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color,2,)
+                cv2.putText(frame, class_name, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
         # Draw the trajectory
         if show_trajectory and trajectory:
