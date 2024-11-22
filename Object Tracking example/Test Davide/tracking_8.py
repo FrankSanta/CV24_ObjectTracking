@@ -102,8 +102,8 @@ def find_ball(frame):
     #cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
     # Define the RGB bounds for the pixel values
-    lower_bound = np.array([175, 195, 155], dtype=np.uint8)
-    upper_bound = np.array([205, 225, 185], dtype=np.uint8)
+    lower_bound = np.array([174, 194, 154], dtype=np.uint8)
+    upper_bound = np.array([206, 226, 186], dtype=np.uint8)
 
     # Create a mask for pixels within the defined range
     mask = cv2.inRange(roi, lower_bound, upper_bound)
