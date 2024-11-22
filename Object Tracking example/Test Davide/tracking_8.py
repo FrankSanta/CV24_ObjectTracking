@@ -13,6 +13,7 @@ class ObjectDetection:
         # Load YOLOv8 model
         self.model = YOLO(model_path)
         self.classes = self.model.names  # Class names from the model
+        self.classes[32] = "tennis ball"
         self.image_size = 512
         self.confThreshold = 0.3
         self.iouThreshold = 0.3
@@ -95,6 +96,27 @@ def start_listener():
     with keyboard.Listener(on_press=on_press) as listener:
         listener.join()
 
+def find_ball(frame):
+    y1, y2, x1, x2 = 50, 315, 110, 430
+    roi = frame[y1:y2, x1:x2]
+    #cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+    # Define the RGB bounds for the pixel values
+    lower_bound = np.array([175, 195, 155], dtype=np.uint8)
+    upper_bound = np.array([205, 225, 185], dtype=np.uint8)
+
+    # Create a mask for pixels within the defined range
+    mask = cv2.inRange(roi, lower_bound, upper_bound)
+
+    # Find the locations of the matching pixels
+    matching_pixels = np.column_stack(np.where(mask > 0))
+
+    # Draw yellow circles around the matching pixels
+    for (y, x) in matching_pixels:
+        cv2.circle(frame, (x1 + x, y1 + y), 5, (0, 255, 255), -1)
+
+    return frame
+
 
 # Start the listener
 key_thread = threading.Thread(target=start_listener, daemon=True)
@@ -115,6 +137,7 @@ try:
             break
         
         frame = cv2.resize(frame, (192 * 3, 144 * 3))
+        frame = find_ball(frame)
 
         # Detect objects on frame
         class_ids, scores, boxes = od.detect(frame)
