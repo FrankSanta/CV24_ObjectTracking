@@ -130,6 +130,11 @@ cap = cv2.VideoCapture("../videos/Tennis.mp4")
 cv2.namedWindow("Frame")
 cv2.setMouseCallback("Frame", mouse_callback)
 
+ball = [] 
+sinner = []  
+djokovic = []  
+y1, y2, x1, x2 = 80, 315, 110, 400
+
 try:
     while True:
         ret, frame = cap.read()
@@ -141,6 +146,45 @@ try:
 
         # Detect objects on frame
         class_ids, scores, boxes = od.detect(frame)
+
+        min_y_diff_sinner = float("inf")
+        min_y_diff_djokovic = float("inf")
+        sinner_center = None
+        djokovic_center = None
+
+        for class_id, box in zip(class_ids, boxes):
+            cx, cy = calculate_center(box)
+            if not (x1 <= cx <= x2 and y1 <= cy <= y2):
+                continue
+            # Check for "tennis ball" class and save its center
+            if od.classes[class_id] == "tennis ball":
+                ball.append((cx, cy))
+
+            # Check for y closest to 310 (Sinner)
+            y_diff_sinner = abs(cy - 310)
+            if y_diff_sinner < min_y_diff_sinner:
+                min_y_diff_sinner = y_diff_sinner
+                sinner_center = (cx, cy)
+
+            # Check for y closest to 75 (Djokovic)
+            y_diff_djokovic = abs(cy - 75)
+            if y_diff_djokovic < min_y_diff_djokovic:
+                min_y_diff_djokovic = y_diff_djokovic
+                djokovic_center = (cx, cy)
+
+        # Update the lists with the calculated centers
+        if sinner_center:
+            sinner.append(sinner_center)
+        if djokovic_center:
+            djokovic.append(djokovic_center)
+
+        # Draw the trajectory points in blue
+        '''for point in ball:
+            cv2.circle(frame, point, 3, (255, 0, 0), -1)  
+        for point in sinner:
+            cv2.circle(frame, point, 3, (255, 0, 0), -1)  
+        for point in djokovic:
+            cv2.circle(frame, point, 3, (255, 0, 0), -1)'''
 
         # Check if 'f' key was pressed
         if f_pressed:
