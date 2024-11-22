@@ -3,6 +3,7 @@ import math
 import numpy as np
 import threading
 from pynput import keyboard
+import os
 
 class ObjectDetection:
     def __init__(self, weights_path="../dnn_model/yolov4-tiny.weights", cfg_path="../dnn_model/yolov4-tiny.cfg",):
@@ -97,6 +98,25 @@ def euclidean_distance(pt1, pt2):
 def start_listener():
     with keyboard.Listener(on_press=on_press) as listener:
         listener.join()
+
+def load_features(folder="balls"):
+    ball_images = []
+    ball_keypoints = []
+    ball_descriptors = []
+
+    orb = cv2.ORB_create()  # You can also use SIFT if needed (requires OpenCV-contrib)
+    
+    for filename in os.listdir(folder):
+        if filename.endswith(".jpg") or filename.endswith(".png"):  # Add other formats if needed
+            img_path = os.path.join(folder, filename)
+            img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+            if img is not None:
+                keypoints, descriptors = orb.detectAndCompute(img, None)
+                ball_images.append(img)
+                ball_keypoints.append(keypoints)
+                ball_descriptors.append(descriptors)
+
+    return ball_images, ball_keypoints, ball_descriptors
 
 # Start the listener
 key_thread = threading.Thread(target=start_listener, daemon=True)
