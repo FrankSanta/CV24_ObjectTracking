@@ -81,11 +81,11 @@ def mouse_callback(event, x, y, flags, param):
         mouse_x, mouse_y = x, y
 
 
-def calculate_feet_position(box):
+def calculate_center_position(box):
     """Calculate the center of a bounding box."""
     x, y, w, h = box
     cx = x + w // 2
-    cy = y + h
+    cy = y + h // 2
     return cx, cy
 
 
@@ -153,7 +153,7 @@ def compute_intersection(L1, L2):
         return None  # Lines are parallel
     
 
-#def select_corners(corner_points):
+'''def select_corners(corner_points):
 
     corner_points = np.array(corner_points)
     print(corner_points)
@@ -183,7 +183,7 @@ def compute_intersection(L1, L2):
         lowest_x_highest_y_point
     ])
 
-    return selected_points
+    return selected_points'''
 
 def select_corners(corner_points):
 
@@ -235,13 +235,13 @@ cv2.setMouseCallback("Frame", mouse_callback)
 ball = [] 
 sinner = []  
 djokovic = []  
-y_sinner1 = 200
-y_sinner2 = 400
-x_sinner1 = 30
+y_sinner1 = 185
+y_sinner2 = 350
+x_sinner1 = 60
 x_sinner2 = 530
-y_djokovic1 = 80
-y_djokovic2 = 170
-x_djokovic1 = 160
+y_djokovic1 = 65
+y_djokovic2 = 160
+x_djokovic1 = 170
 x_djokovic2 = 400
 
 
@@ -348,7 +348,7 @@ while True:
 
 
     i += 1
-
+    rectified_frame_copy = rectified_frame.copy()  
     frame = find_ball(frame)
 
     # Detect objects on frame
@@ -361,7 +361,7 @@ while True:
 
 
     for class_id, box in zip(class_ids, boxes):
-        cx, cy = calculate_feet_position(box)
+        cx, cy = calculate_center_position(box)
         # Check for "tennis ball" class and save its center
         if od.classes[class_id] == "tennis ball":
             ball.append((cx, cy))
@@ -403,7 +403,7 @@ while True:
             image_area = frame.shape[0] * frame.shape[1]
             if box_area > image_area / 2:
                 continue
-            cx, cy = calculate_feet_position(box)
+            cx, cy = calculate_center_position(box)
             if box[0] <= mouse_x <= box[0] + box[2] and box[1] <= mouse_y <= box[1] + box[3]:
                 selected_object = box
                 selected_center = (cx, cy)
@@ -435,7 +435,7 @@ while True:
         nearest_class = None
 
         for class_id, box in zip(class_ids, boxes):
-            cx, cy = calculate_feet_position(box)
+            cx, cy = calculate_center_position(box)
             distance = euclidean_distance(selected_center, (cx, cy))
             if distance < min_distance:
                 min_distance = distance
@@ -481,7 +481,7 @@ while True:
         transformed_ball_list = transformed_ball.reshape(-1, 2)
         for point in transformed_ball_list:
             x, y = int(point[0]), int(point[1])
-            cv2.circle(rectified_frame, (x, y), 5, (0, 0, 255), -1)
+            cv2.circle(rectified_frame_copy, (x, y), 5, (0, 0, 255), -1)
 
     if sinner:
         sinner_array = np.array(sinner, dtype='float32').reshape(-1, 1, 2)
@@ -489,7 +489,7 @@ while True:
         transformed_sinner_list = transformed_sinner.reshape(-1, 2)
         for point in transformed_sinner_list:
             x, y = int(point[0]), int(point[1])
-            cv2.circle(rectified_frame, (x, y), 5, (0, 255, 0), -1)
+            cv2.circle(rectified_frame_copy, (x, y), 5, (0, 255, 0), -1)
 
     if djokovic:
         djokovic_array = np.array(djokovic, dtype='float32').reshape(-1, 1, 2)
@@ -497,13 +497,58 @@ while True:
         transformed_djokovic_list = transformed_djokovic.reshape(-1, 2)
         for point in transformed_djokovic_list:
             x, y = int(point[0]), int(point[1])
-            cv2.circle(rectified_frame, (x, y), 5, (255, 0, 0), -1)
+            cv2.circle(rectified_frame_copy, (x, y), 5, (255, 0, 0), -1)
 
-    cv2.imshow('Rectified Court', rectified_frame)
+    cv2.imshow('Rectified Court', rectified_frame_copy)
     cv2.waitKey(1)
 
 
-height, width = rectified_frame.shape[:2]
+# Convert to grayscale
+gray = cv2.cvtColor(rectified_frame, cv2.COLOR_BGR2GRAY)
+# Apply Gaussian Blur
+blur = cv2.GaussianBlur(gray, (5, 5), 0)
+# Edge detection
+edges = cv2.Canny(blur, 50, 100)
+    
+    
+# Apply Hough Line Transform
+lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=30, minLineLength=100, maxLineGap=10)
+line_image = rectified_frame.copy()
+if lines is not None:
+    for line in lines:
+        x1, y1, x2, y2 = line[0]
+        cv2.line(line_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+horizontal_lines, vertical_lines = filter_lines(lines)
+# Visualize filtered lines
+filtered_line_image = rectified_frame.copy()
+for line in horizontal_lines:
+    x1, y1, x2, y2 = line[0]
+    cv2.line(filtered_line_image, (x1, y1), (x2, y2), (255, 0, 0), 2)  # Blue for horizontal lines
+for line in vertical_lines:
+    x1, y1, x2, y2 = line[0]
+    cv2.line(filtered_line_image, (x1, y1), (x2, y2), (0, 0, 255), 2)  # Red for vertical lines
+cv2.imshow('Lines Court', filtered_line_image)
+cv2.waitKey(0)
+
+# Compute intersections between horizontal and vertical lines
+intersections = []
+for h_line in horizontal_lines:
+    L1 = get_line_params(h_line)
+    for v_line in vertical_lines:
+        L2 = get_line_params(v_line)
+        point = compute_intersection(L1, L2)
+        intersections.append(point)
+
+# Visualize intersections
+intersection_image = rectified_frame.copy()
+for point in intersections:
+    x, y = map(int, point)
+    cv2.circle(intersection_image, (x, y), 5, (255, 0, 0), -1)
+cv2.imshow('Intersections', intersection_image)
+cv2.waitKey(0)
+
+
 # Initialize a heatmap array with zeros
 heatmap_djokovic = np.zeros((height, width), dtype=np.float32)
 heatmap_sinner = np.zeros((height, width), dtype=np.float32)
@@ -532,9 +577,25 @@ heatmap_sinner_uint8 = heatmap_sinner_normalized.astype(np.uint8)
 
 heatmap_djokovic_colored = cv2.applyColorMap(heatmap_djokovic_uint8, cv2.COLORMAP_JET)
 heatmap_sinner_colored = cv2.applyColorMap(heatmap_sinner_uint8, cv2.COLORMAP_JET)
+print(heatmap_djokovic_colored.shape)
 
+for i in range(len(intersections)):
+    for j in range(i + 1, len(intersections)):
+        point1 = intersections[i]
+        point2 = intersections[j]
+        
+        # Check if the line is horizontal or vertical
+        if (point1[0] == point2[0] or point1[1] == point2[1]) and point1[1] > 160  and point2[1] > 160:  # Vertical or horizontal check
+            point1 = tuple(map(int, point1))
+            point2 = tuple(map(int, point2))
+            cv2.line(heatmap_djokovic_colored, point1, point2, (255, 255, 255), 2)
+            cv2.line(heatmap_sinner_colored, point1, point2, (255, 255, 255), 2)
+
+#heatmap_djokovic_image = cv2.addWeighted(connected_lines_image, 0.6, heatmap_djokovic_colored, 0.4, 0)
 cv2.imshow('Heatmap Djokovic', heatmap_djokovic_colored)
 cv2.waitKey(0)
+
+#heatmap_sinner_image = cv2.addWeighted(connected_lines_image, 0.6, heatmap_sinner_colored, 0.4, 0)
 cv2.imshow('Heatmap Sinner', heatmap_sinner_colored)
 cv2.waitKey(0)
 cv2.destroyAllWindows()
