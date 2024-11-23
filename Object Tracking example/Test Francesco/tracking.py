@@ -5,51 +5,44 @@ import threading
 import random
 from pynput import keyboard
 from sklearn.cluster import KMeans
+from ultralytics import YOLO
 
 class ObjectDetection:
-    def __init__(
-        self,
-        weights_path="../dnn_model/yolov4.weights",
-        cfg_path="../dnn_model/yolov4.cfg",
-    ):
+    def __init__(self, model_path="../dnn_model/yolov8n.pt"):
         print("Loading Object Detection")
-        print("Running opencv dnn with YOLOv4")
-        self.nmsThreshold = 0.4
-        self.confThreshold = 0.5
+        print("Running ultralytics YOLOv8-nano")
+
+        # Load YOLOv8 model
+        self.model = YOLO(model_path)
+        self.classes = self.model.names  # Class names from the model
+        self.classes[32] = "tennis ball"
         self.image_size = 512
+        self.confThreshold = 0.3
+        self.iouThreshold = 0.3
 
-        # Load Network
-        net = cv2.dnn.readNet(weights_path, cfg_path)
-
-        # Enable GPU CUDA if available
-        try:
-            net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
-            net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
-        except Exception as e:
-            print("[WARNING] CUDA is not available. Falling back to CPU.")
-            print(e)
-        self.model = cv2.dnn_DetectionModel(net)
-
-        self.classes = []
-        self.load_class_names()
-        self.colors = np.random.uniform(0, 255, size=(80, 3))
-
-        self.model.setInputParams(
-            size=(self.image_size, self.image_size), scale=1 / 255
-        )
-
-    def load_class_names(self, classes_path="../dnn_model/classes.txt"):
-        with open(classes_path, "r") as file_object:
-            for class_name in file_object.readlines():
-                class_name = class_name.strip()
-                self.classes.append(class_name)
-
-        return self.classes
+        self.colors = np.random.uniform(0, 255, size=(len(self.classes), 3))
 
     def detect(self, frame):
-        return self.model.detect(
-            frame, nmsThreshold=self.nmsThreshold, confThreshold=self.confThreshold
-        )
+        # Run YOLOv8 inference
+        results = self.model(frame, imgsz=self.image_size, conf=self.confThreshold, iou=self.iouThreshold)
+        
+        # Extract detection results
+        detections = results[0]  # YOLOv8 returns a list, take the first (single frame detection)
+        boxes = detections.boxes.xyxy.cpu().numpy()  # Convert to NumPy array: [x_min, y_min, x_max, y_max]
+        confidences = detections.boxes.conf.cpu().numpy()  # Confidence scores
+        class_ids = detections.boxes.cls.cpu().numpy().astype(int)  # Class IDs
+        
+        # Convert boxes to (x, y, w, h) format
+        converted_boxes = []
+        for box in boxes:
+            x_min, y_min, x_max, y_max = box
+            x = int(x_min)
+            y = int(y_min)
+            w = int(x_max - x_min)
+            h = int(y_max - y_min)
+            converted_boxes.append([x, y, w, h])
+
+        return class_ids, confidences, converted_boxes
 
 # Global flags and variables
 f_pressed = False
@@ -77,8 +70,6 @@ def on_press(key):
         f_pressed = True
     if key == "s":
         s_pressed = True
-    if key == "esc":  # Allow exiting with ESC key
-        exit_flag = True
 
 
 def mouse_callback(event, x, y, flags, param):
@@ -90,11 +81,11 @@ def mouse_callback(event, x, y, flags, param):
         mouse_x, mouse_y = x, y
 
 
-def calculate_center(box):
+def calculate_feet_position(box):
     """Calculate the center of a bounding box."""
     x, y, w, h = box
     cx = x + w // 2
-    cy = y + h // 2
+    cy = y + h
     return cx, cy
 
 
@@ -107,6 +98,27 @@ def euclidean_distance(pt1, pt2):
 def start_listener():
     with keyboard.Listener(on_press=on_press) as listener:
         listener.join()
+
+def find_ball(frame):
+    y1, y2, x1, x2 = 50, 315, 110, 430
+    roi = frame[y1:y2, x1:x2]
+    #cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+    # Define the RGB bounds for the pixel values
+    lower_bound = np.array([174, 194, 154], dtype=np.uint8)
+    upper_bound = np.array([206, 226, 186], dtype=np.uint8)
+
+    # Create a mask for pixels within the defined range
+    mask = cv2.inRange(roi, lower_bound, upper_bound)
+
+    # Find the locations of the matching pixels
+    matching_pixels = np.column_stack(np.where(mask > 0))
+
+    # Draw yellow circles around the matching pixels
+    for (y, x) in matching_pixels:
+        cv2.circle(frame, (x1 + x, y1 + y), 5, (0, 255, 255), -1)
+
+    return frame
 
 def filter_lines(lines):
     horizontal_lines = []
@@ -180,8 +192,8 @@ def select_corners(corner_points):
     points = []
 
     for point in corner_points:
-        if (point[1] > 100 and point[1] < 120) or (point[1] > 280 and point[1] < 310):
-            if (point[0] > 175 and point[0] < 200) or (point[0] > 370 and point[0] < 400) or (point[0] > 370 and point[0] < 400) or (point[0] > 95 and point[0] < 130) or (point[0] > 450 and point[0] < 485):
+        if (point[1] > 50 and point[1] < 70) or (point[1] > 360 and point[1] < 375):
+            if (point[0] > 200 and point[0] < 220) or (point[0] > 350 and point[0] < 370) or (point[0] > 490 and point[0] < 510) or (point[0] > 75 and point[0] < 100):
                 points.append(point)
 
     points = np.array(points)
@@ -191,8 +203,8 @@ def select_corners(corner_points):
     selected_points = np.array([
     [sorted_points[0][0], sorted_points[0][1]],
     [sorted_points[1][0], sorted_points[1][1]],
-    [sorted_points[2][0], sorted_points[2][1]],
-    [sorted_points[3][0], sorted_points[3][1]]], dtype="float32")
+    [sorted_points[3][0], sorted_points[3][1]],
+    [sorted_points[2][0], sorted_points[2][1]]], dtype="float32")
     
 
 
@@ -220,243 +232,309 @@ cap = cv2.VideoCapture("../videos/Tennis.mp4")
 cv2.namedWindow("Frame")
 cv2.setMouseCallback("Frame", mouse_callback)
 
-try:
-    i = 0
-    while True:
-        
-        if i == 0:
-            # Convert to grayscale
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            # Apply Gaussian Blur
-            blur = cv2.GaussianBlur(gray, (5, 5), 0)
-            # Edge detection
-            edges = cv2.Canny(blur, 40, 140)
-                
-                
-            # Apply Hough Line Transform
-            lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=50, minLineLength=105, maxLineGap=10)
-            line_image = frame.copy()
-            if lines is not None:
-                for line in lines:
-                    x1, y1, x2, y2 = line[0]
-                    cv2.line(line_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+ball = [] 
+sinner = []  
+djokovic = []  
+y_sinner1 = 200
+y_sinner2 = 400
+x_sinner1 = 30
+x_sinner2 = 530
+y_djokovic1 = 80
+y_djokovic2 = 170
+x_djokovic1 = 160
+x_djokovic2 = 400
 
-            horizontal_lines, vertical_lines = filter_lines(lines)
-            # Visualize filtered lines
-            filtered_line_image = frame.copy()
-            for line in horizontal_lines:
+
+i = 0
+while True:
+
+    ret, frame = cap.read()
+    if not ret or exit_flag:  # Exit loop if video ends or ESC is pressed
+        break
+    frame = cv2.resize(frame, (192 * 3, 144 * 3))
+
+    if i == 0:
+        # Convert to grayscale
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        # Apply Gaussian Blur
+        blur = cv2.GaussianBlur(gray, (5, 5), 0)
+        # Edge detection
+        edges = cv2.Canny(blur, 50, 100)
+            
+            
+        # Apply Hough Line Transform
+        lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=30, minLineLength=100, maxLineGap=10)
+        line_image = frame.copy()
+        if lines is not None:
+            for line in lines:
                 x1, y1, x2, y2 = line[0]
-                cv2.line(filtered_line_image, (x1, y1), (x2, y2), (255, 0, 0), 2)  # Blue for horizontal lines
-            for line in vertical_lines:
-                x1, y1, x2, y2 = line[0]
-                cv2.line(filtered_line_image, (x1, y1), (x2, y2), (0, 0, 255), 2)  # Red for vertical lines
-            cv2.imshow('Lines Court', filtered_line_image)
-            cv2.waitKey(10)
+                cv2.line(line_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+        horizontal_lines, vertical_lines = filter_lines(lines)
+        # Visualize filtered lines
+        '''filtered_line_image = frame.copy()
+        for line in horizontal_lines:
+            x1, y1, x2, y2 = line[0]
+            cv2.line(filtered_line_image, (x1, y1), (x2, y2), (255, 0, 0), 2)  # Blue for horizontal lines
+        for line in vertical_lines:
+            x1, y1, x2, y2 = line[0]
+            cv2.line(filtered_line_image, (x1, y1), (x2, y2), (0, 0, 255), 2)  # Red for vertical lines
+        cv2.imshow('Lines Court', filtered_line_image)
+        cv2.waitKey(1)'''
 
 
-            # Compute intersections between horizontal and vertical lines
-            intersections = []
-            for h_line in horizontal_lines:
-                L1 = get_line_params(h_line)
-                for v_line in vertical_lines:
-                    L2 = get_line_params(v_line)
-                    point = compute_intersection(L1, L2)
-                    if point is not None and point[0] >= 50 and point[1] >= 100 and point[0] <= frame.shape[1] - 50 and point[1] <= frame.shape[0] - 100:
-                        intersections.append(point)
+        # Compute intersections between horizontal and vertical lines
+        intersections = []
+        for h_line in horizontal_lines:
+            L1 = get_line_params(h_line)
+            for v_line in vertical_lines:
+                L2 = get_line_params(v_line)
+                point = compute_intersection(L1, L2)
+                if point is not None and point[0] >= 50 and point[1] >= 50 and point[0] <= frame.shape[1] - 50 and point[1] <= frame.shape[0] - 50:
+                    intersections.append(point)
 
-            # Visualize intersections
-            intersection_image = frame.copy()
-            for point in intersections:
+        # Visualize intersections
+        '''intersection_image = frame.copy()
+        for point in intersections:
+            x, y = map(int, point)
+            cv2.circle(intersection_image, (x, y), 5, (255, 0, 0), -1)
+        cv2.imshow('Intersections', intersection_image)
+        cv2.waitKey(1) '''
+
+        # Cluster intersections to find four corners
+        points = np.array(intersections)
+        n_clusters = 39
+
+        if len(points) >= n_clusters:
+            
+            kmeans = KMeans(n_clusters=n_clusters, random_state=0).fit(points)
+            corner_points = kmeans.cluster_centers_
+
+            # Visualize clustered corners
+            '''cluster_image = frame.copy()
+            colors = create_color_list(n_clusters)
+            labels = kmeans.labels_
+            for idx, point in enumerate(points):
                 x, y = map(int, point)
-                cv2.circle(intersection_image, (x, y), 5, (255, 0, 0), -1)
-            cv2.imshow('Intersections', intersection_image)
-            cv2.waitKey(10)
+                cluster_idx = labels[idx]
+                cv2.circle(cluster_image, (x, y), 5, colors[cluster_idx], -1)
+            for idx, center in enumerate(corner_points):
+                x, y = map(int, center)
+                cv2.circle(cluster_image, (x, y), 10, colors[idx], 2)
+            cv2.imshow('Clustered Corners', cluster_image)
+            cv2.waitKey(1)'''
 
-            # Cluster intersections to find four corners
-            points = np.array(intersections)
-            n_clusters = 16
+            # Order corner points
+            src_points = select_corners(corner_points)
 
-            if len(points) >= n_clusters:
-                
-                kmeans = KMeans(n_clusters=n_clusters, random_state=0).fit(points)
-                corner_points = kmeans.cluster_centers_
+            # Compute homography and warp perspective
+            width, height = 180, 500
+            dst_points = np.array([
+                [0, 0],
+                [width - 1, 0],
+                [width - 1, height - 1],
+                [0, height - 1]
+            ], dtype="float32")
 
-                # Visualize clustered corners
-                cluster_image = frame.copy()
-                colors = create_color_list(n_clusters)
-                labels = kmeans.labels_
-                for idx, point in enumerate(points):
-                    x, y = map(int, point)
-                    cluster_idx = labels[idx]
-                    cv2.circle(cluster_image, (x, y), 5, colors[cluster_idx], -1)
-                for idx, center in enumerate(corner_points):
-                    x, y = map(int, center)
-                    cv2.circle(cluster_image, (x, y), 10, colors[idx], 2)
-                cv2.imshow('Clustered Corners', cluster_image)
-                cv2.waitKey(1)
+            homography_matrix, status = cv2.findHomography(src_points, dst_points)
+            rectified_frame = cv2.warpPerspective(frame, homography_matrix, (width, height))
 
-                # Order corner points
-                src_points = select_corners(corner_points)
-
-                # Compute homography and warp perspective
-                width, height = 800, 400
-                dst_points = np.array([
-                    [0, 0],
-                    [width - 1, 0],
-                    [width - 1, height - 1],
-                    [0, height - 1]
-                ], dtype="float32")
-
-                homography_matrix, status = cv2.findHomography(src_points, dst_points)
-
-                points_array = np.array([[200, 200], [250, 250]], dtype='float32').reshape(-1, 1, 2)
-                # Transform the points using the homography matrix
-                transformed_points = cv2.perspectiveTransform(points_array, homography_matrix)
-                # Convert the transformed points to a list of [x, y]
-                transformed_points_list = transformed_points.reshape(-1, 2)
-
-                rectified_frame = cv2.warpPerspective(frame, homography_matrix, (width, height))
-
-                for point in transformed_points_list:
-                    x, y = int(point[0]), int(point[1])
-                    cv2.circle(rectified_frame, (x, y), 5, (0, 0, 255), -1)
-
-                cv2.imshow('Rectified Court', rectified_frame)
-                cv2.waitKey(10)
-                
-            else:
-                print("Not enough intersection points detected to compute homography.")
-
-        i += 1
-        ret, frame = cap.read()
-        if not ret or exit_flag:  # Exit loop if video ends or ESC is pressed
-            break
-        frame = cv2.resize(frame, (192 * 3, 144 * 3))
-
-        # Detect objects on frame
-        (class_ids, scores, boxes) = od.detect(frame)
-
-        # Check if 'f' key was pressed
-        if f_pressed:
-            f_pressed = False  # Reset flag
-            object_selected = False
-            print(mouse_x, mouse_y)
-
-            # Ensure the latest mouse position is updated immediately
+            cv2.imshow('Rectified Court', rectified_frame)
             cv2.waitKey(1)
-
-            for class_id, box in zip(class_ids, boxes):
-                cx, cy = calculate_center(box)
-                if (
-                    box[0] <= mouse_x <= box[0] + box[2]
-                    and box[1] <= mouse_y <= box[1] + box[3]
-                ):
-                    selected_object = box
-                    selected_center = (cx, cy)
-                    selected_class = od.classes[class_id]  # Get the class name
-                    trajectory.clear()  # Clear trajectory when selecting a new object
-                    object_selected = True
-                    break
-
-            if not object_selected:
-                # If no object is selected, reset to show all boxes
-                selected_object = None
-                selected_center = None
-                selected_class = None
-                trajectory.clear()  # Clear trajectory when deselecting an object
-
-        # Check if 's' key was pressed
-        if s_pressed:
-            s_pressed = False  # Reset flag
-            if (
-                selected_object is not None
-            ):  # Only toggle if an object is being followed
-                show_trajectory = not show_trajectory
-                if not show_trajectory:
-                    trajectory.clear()  # Clear trajectory when hiding it
-
-        # If an object is selected, track the nearest box
-        if selected_object is not None:
-            min_distance = float("inf")
-            nearest_box = None
-            nearest_center = None
-            nearest_class = None
-
-            for class_id, box in zip(class_ids, boxes):
-                cx, cy = calculate_center(box)
-                distance = euclidean_distance(selected_center, (cx, cy))
-                if distance < min_distance:
-                    min_distance = distance
-                    nearest_box = box
-                    nearest_center = (cx, cy)
-                    nearest_class = od.classes[class_id]
-
-            if nearest_box is not None:
-                selected_object = nearest_box
-                selected_center = nearest_center
-                selected_class = nearest_class
-
-                # Update trajectory
-                if show_trajectory:
-                    trajectory.append(selected_center)
-
-            # Draw the selected box with its class
-            x, y, w, h = selected_object
-            color = (0, 255, 0)  # Green for the selected box
-            cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
-            label = f"Selected {selected_class}"
-            cv2.putText(
-                frame, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2
-            )
+            
         else:
-            # Draw all boxes if no object is selected
-            for class_id, box in zip(class_ids, boxes):
-                x, y, w, h = box
-                color = (0, 0, 255)  # Red for all boxes
-                cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
-                class_name = od.classes[class_id]
-                cv2.putText(
-                    frame,
-                    class_name,
-                    (x, y - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5,
-                    color,
-                    2,
-                )
-
-        # Draw the trajectory
-        if show_trajectory and trajectory:
-            for point in trajectory:
-                cv2.circle(frame, point, 3, (255, 0, 0), -1)  # Blue dots for trajectory
-
-        cv2.imshow('Frame', frame)
-        cv2.waitKey(10)
+            print("Not enough intersection points detected to compute homography.")
 
 
-        points_array = np.array([[200, 200], [250, 250]], dtype='float32').reshape(-1, 1, 2)
-        # Transform the points using the homography matrix
-        transformed_points = cv2.perspectiveTransform(points_array, homography_matrix)
-        # Convert the transformed points to a list of [x, y]
-        transformed_points_list = transformed_points.reshape(-1, 2)
 
-        rectified_frame = cv2.warpPerspective(frame, homography_matrix, (width, height))
+    i += 1
 
-        for point in transformed_points_list:
+    frame = find_ball(frame)
+
+    # Detect objects on frame
+    (class_ids, scores, boxes) = od.detect(frame)
+
+    min_y_diff_sinner = float("inf")
+    min_y_diff_djokovic = float("inf")
+    sinner_center = None
+    djokovic_center = None
+
+
+    for class_id, box in zip(class_ids, boxes):
+        cx, cy = calculate_feet_position(box)
+        # Check for "tennis ball" class and save its center
+        if od.classes[class_id] == "tennis ball":
+            ball.append((cx, cy))
+
+        else:
+
+            if  cy > y_djokovic1 and cy < y_djokovic2 and cx < x_djokovic2 and cx > x_djokovic1:
+                djokovic_center = (cx, cy)
+            elif cy > y_sinner1 and cy < y_sinner2 and cx < x_sinner2 and cx > x_sinner1:
+                sinner_center = (cx, cy)
+
+
+
+    # Update the lists with the calculated centers
+    if sinner_center:
+        sinner.append(sinner_center)
+    if djokovic_center:
+        djokovic.append(djokovic_center)
+
+    # Draw the trajectory points in blue
+    for point in ball:
+        cv2.circle(frame, point, 3, (255, 0, 0), -1)  
+    for point in sinner:
+        cv2.circle(frame, point, 3, (255, 0, 0), -1)  
+    for point in djokovic:
+        cv2.circle(frame, point, 3, (255, 0, 0), -1)
+
+    # Check if 'f' key was pressed
+    if f_pressed:
+        f_pressed = False  # Reset flag
+        object_selected = False
+        print(mouse_x, mouse_y)
+
+        # Ensure the latest mouse position is updated immediately
+        cv2.waitKey(1)
+
+        for class_id, box in zip(class_ids, boxes):
+            box_area = box[2] * box[3]
+            image_area = frame.shape[0] * frame.shape[1]
+            if box_area > image_area / 2:
+                continue
+            cx, cy = calculate_feet_position(box)
+            if box[0] <= mouse_x <= box[0] + box[2] and box[1] <= mouse_y <= box[1] + box[3]:
+                selected_object = box
+                selected_center = (cx, cy)
+                selected_class = od.classes[class_id]  # Get the class name
+                trajectory.clear()  # Clear trajectory when selecting a new object
+                object_selected = True
+                break
+
+        if not object_selected:
+            # If no object is selected, reset to show all boxes
+            selected_object = None
+            selected_center = None
+            selected_class = None
+            trajectory.clear()  # Clear trajectory when deselecting an object
+
+    # Check if 's' key was pressed
+    if s_pressed:
+        s_pressed = False  # Reset flag
+        if selected_object is not None:  # Only toggle if an object is being followed
+            show_trajectory = not show_trajectory
+            if not show_trajectory:
+                trajectory.clear()  # Clear trajectory when hiding it
+
+    # If an object is selected, track the nearest box
+    if selected_object is not None:
+        min_distance = float("inf")
+        nearest_box = None
+        nearest_center = None
+        nearest_class = None
+
+        for class_id, box in zip(class_ids, boxes):
+            cx, cy = calculate_feet_position(box)
+            distance = euclidean_distance(selected_center, (cx, cy))
+            if distance < min_distance:
+                min_distance = distance
+                nearest_box = box
+                nearest_center = (cx, cy)
+                nearest_class = od.classes[class_id]
+
+        if nearest_box is not None:
+            selected_object = nearest_box
+            selected_center = nearest_center
+            selected_class = nearest_class
+
+            # Update trajectory
+            if show_trajectory:
+                trajectory.append(selected_center)
+
+        # Draw the selected box with its class
+        x, y, w, h = selected_object
+        color = (0, 255, 0)  # Green for the selected box
+        cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
+        label = f"Selected {selected_class}"
+        cv2.putText(frame, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+    else:
+        # Draw all boxes if no object is selected
+        for class_id, box in zip(class_ids, boxes):
+            x, y, w, h = box
+            color = (0, 0, 255)  # Red for all boxes
+            cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
+            class_name = od.classes[class_id]
+            cv2.putText(frame, class_name, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
+    # Draw the trajectory
+    if show_trajectory and trajectory:
+        for point in trajectory:
+            cv2.circle(frame, point, 3, (255, 0, 0), -1)  # Blue dots for trajectory
+
+    cv2.imshow("Frame", frame)
+    cv2.waitKey(1)
+
+    if ball:
+        ball_array = np.array(ball, dtype='float32').reshape(-1, 1, 2)
+        transformed_ball = cv2.perspectiveTransform(ball_array, homography_matrix)
+        transformed_ball_list = transformed_ball.reshape(-1, 2)
+        for point in transformed_ball_list:
             x, y = int(point[0]), int(point[1])
             cv2.circle(rectified_frame, (x, y), 5, (0, 0, 255), -1)
 
-        cv2.imshow('Rectified Court', rectified_frame)
-        cv2.waitKey(10)
+    if sinner:
+        sinner_array = np.array(sinner, dtype='float32').reshape(-1, 1, 2)
+        transformed_sinner = cv2.perspectiveTransform(sinner_array, homography_matrix)
+        transformed_sinner_list = transformed_sinner.reshape(-1, 2)
+        for point in transformed_sinner_list:
+            x, y = int(point[0]), int(point[1])
+            cv2.circle(rectified_frame, (x, y), 5, (0, 255, 0), -1)
 
-        if cv2.waitKey(1) == 27:  # ESC key for fallback exit
-            exit_flag = True
-            break
+    if djokovic:
+        djokovic_array = np.array(djokovic, dtype='float32').reshape(-1, 1, 2)
+        transformed_djokovic = cv2.perspectiveTransform(djokovic_array, homography_matrix)
+        transformed_djokovic_list = transformed_djokovic.reshape(-1, 2)
+        for point in transformed_djokovic_list:
+            x, y = int(point[0]), int(point[1])
+            cv2.circle(rectified_frame, (x, y), 5, (255, 0, 0), -1)
 
-except Exception as e:
-    print("Exception in main loop:", e)
+    cv2.imshow('Rectified Court', rectified_frame)
+    cv2.waitKey(1)
 
-finally:
-    print("\n\nExiting...\n")
-    cap.release()
-    cv2.destroyAllWindows()
+
+height, width = rectified_frame.shape[:2]
+# Initialize a heatmap array with zeros
+heatmap_djokovic = np.zeros((height, width), dtype=np.float32)
+heatmap_sinner = np.zeros((height, width), dtype=np.float32)
+
+for x, y in transformed_djokovic_list:
+    x = int(round(x))
+    y = int(round(y))
+    if 0 <= x < width and 0 <= y < height:
+        heatmap_djokovic[y, x] += 1  # Increment the count at the position
+
+for x, y in transformed_sinner_list:
+    x = int(round(x))
+    y = int(round(y))
+    if 0 <= x < width and 0 <= y < height:
+        heatmap_sinner[y, x] += 1  # Increment the count at the position
+
+# Apply Gaussian blur to smooth the heatmap
+heatmap_djokovic_blurred = cv2.GaussianBlur(heatmap_djokovic, (0, 0), sigmaX=15, sigmaY=15, borderType=cv2.BORDER_REPLICATE)
+heatmap_sinner_blurred = cv2.GaussianBlur(heatmap_sinner, (0, 0), sigmaX=15, sigmaY=15, borderType=cv2.BORDER_REPLICATE)
+
+heatmap_djokovic_normalized = cv2.normalize(heatmap_djokovic_blurred, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
+heatmap_sinner_normalized = cv2.normalize(heatmap_sinner_blurred, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
+
+heatmap_djokovic_uint8 = heatmap_djokovic_normalized.astype(np.uint8)
+heatmap_sinner_uint8 = heatmap_sinner_normalized.astype(np.uint8)
+
+heatmap_djokovic_colored = cv2.applyColorMap(heatmap_djokovic_uint8, cv2.COLORMAP_JET)
+heatmap_sinner_colored = cv2.applyColorMap(heatmap_sinner_uint8, cv2.COLORMAP_JET)
+
+cv2.imshow('Heatmap Djokovic', heatmap_djokovic_colored)
+cv2.waitKey(0)
+cv2.imshow('Heatmap Sinner', heatmap_sinner_colored)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
