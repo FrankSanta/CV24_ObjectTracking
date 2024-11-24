@@ -39,8 +39,6 @@ class ObjectDetection:
 
         return class_ids, confidences, converted_boxes
 
-
-
 # Global flags and variables
 f_pressed = False
 s_pressed = False
@@ -439,10 +437,10 @@ for point in intersections:
 cv2.imshow('Intersections', intersection_image)
 cv2.waitKey(0)
 
-
 # Initialize a heatmap array with zeros
 heatmap_djokovic = np.zeros((height, width), dtype=np.float32)
 heatmap_sinner = np.zeros((height, width), dtype=np.float32)
+heatmap_ball = np.zeros((height, width), dtype=np.float32)
 
 for x, y in transformed_djokovic_list:
     x = int(round(x))
@@ -456,18 +454,28 @@ for x, y in transformed_sinner_list:
     if 0 <= x < width and 0 <= y < height:
         heatmap_sinner[y, x] += 1  # Increment the count at the position
 
+for x, y in transformed_ball_list:
+    x = int(round(x))
+    y = int(round(y))
+    if 0 <= x < width and 0 <= y < height:
+        heatmap_ball[y, x] += 1  # Increment the count at the position
+
 # Apply Gaussian blur to smooth the heatmap
 heatmap_djokovic_blurred = cv2.GaussianBlur(heatmap_djokovic, (0, 0), sigmaX=15, sigmaY=15, borderType=cv2.BORDER_REPLICATE)
 heatmap_sinner_blurred = cv2.GaussianBlur(heatmap_sinner, (0, 0), sigmaX=15, sigmaY=15, borderType=cv2.BORDER_REPLICATE)
+heatmap_ball_blurred = cv2.GaussianBlur(heatmap_ball, (0, 0), sigmaX=15, sigmaY=15, borderType=cv2.BORDER_REPLICATE)
 
 heatmap_djokovic_normalized = cv2.normalize(heatmap_djokovic_blurred, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
 heatmap_sinner_normalized = cv2.normalize(heatmap_sinner_blurred, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
+heatmap_ball_normalized = cv2.normalize(heatmap_ball_blurred, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
 
 heatmap_djokovic_uint8 = heatmap_djokovic_normalized.astype(np.uint8)
 heatmap_sinner_uint8 = heatmap_sinner_normalized.astype(np.uint8)
+heatmap_ball_uint8 = heatmap_ball_normalized.astype(np.uint8)
 
 heatmap_djokovic_colored = cv2.applyColorMap(heatmap_djokovic_uint8, cv2.COLORMAP_JET)
 heatmap_sinner_colored = cv2.applyColorMap(heatmap_sinner_uint8, cv2.COLORMAP_JET)
+heatmap_ball_colored = cv2.applyColorMap(heatmap_ball_uint8, cv2.COLORMAP_JET)
 
 for i in range(len(intersections)):
     for j in range(i + 1, len(intersections)):
@@ -480,13 +488,13 @@ for i in range(len(intersections)):
             point2 = tuple(map(int, point2))
             cv2.line(heatmap_djokovic_colored, point1, point2, (255, 255, 255), 2)
             cv2.line(heatmap_sinner_colored, point1, point2, (255, 255, 255), 2)
+            cv2.line(heatmap_ball_colored, point1, point2, (255, 255, 255), 2)
 
-#heatmap_djokovic_image = cv2.addWeighted(connected_lines_image, 0.6, heatmap_djokovic_colored, 0.4, 0)
 cv2.imshow('Heatmap Djokovic', heatmap_djokovic_colored)
 cv2.waitKey(0)
-
-#heatmap_sinner_image = cv2.addWeighted(connected_lines_image, 0.6, heatmap_sinner_colored, 0.4, 0)
 cv2.imshow('Heatmap Sinner', heatmap_sinner_colored)
+cv2.waitKey(0)
+cv2.imshow('Heatmap Ball', heatmap_ball_colored)
 cv2.waitKey(0)
 
 cv2.destroyAllWindows()
