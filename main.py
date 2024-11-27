@@ -141,19 +141,20 @@ def select_corners(corner_points):
     points = []
 
     for point in corner_points:
-        if (point[1] > 50 and point[1] < 70) or (point[1] > 360 and point[1] < 375):
-            if (point[0] > 200 and point[0] < 220) or (point[0] > 350 and point[0] < 370) or (point[0] > 490 and point[0] < 510) or (point[0] > 75 and point[0] < 100):
+        if (point[1] > 50 and point[1] < 80) or (point[1] > 330 and point[1] < 350):
+            if (point[0] > 200 and point[0] < 220) or (point[0] > 350 and point[0] < 375) or (point[0] > 470 and point[0] < 500) or (point[0] > 80 and point[0] < 110):
                 points.append(point)
 
     points = np.array(points)
     sorted_points = points[points[:, 0].argsort()] 
     sorted_points = sorted_points[sorted_points[:, 1].argsort(kind='mergesort')]
-
+    print(sorted_points)
     selected_points = np.array([
     [sorted_points[0][0], sorted_points[0][1]],
     [sorted_points[1][0], sorted_points[1][1]],
-    [sorted_points[3][0], sorted_points[3][1]],
-    [sorted_points[2][0], sorted_points[2][1]]], dtype="float32")
+    [sorted_points[2][0], sorted_points[2][1]],
+    [sorted_points[3][0], sorted_points[3][1]]], dtype="float32")
+
 
     return selected_points
 
@@ -190,6 +191,7 @@ x_djokovic2 = 400
 first_iter = True
 
 
+
 while True:
     ret, frame = cap.read()
     if not ret or exit_flag:  # Exit loop if video ends or ESC is pressed
@@ -213,6 +215,17 @@ while True:
 
         horizontal_lines, vertical_lines = filter_lines(lines)
 
+        # Visualize filtered lines
+        '''filtered_line_image = frame.copy()
+        for line in horizontal_lines:
+            x1, y1, x2, y2 = line[0]
+            cv2.line(filtered_line_image, (x1, y1), (x2, y2), (255, 0, 0), 2)  # Blue for horizontal lines
+        for line in vertical_lines:
+            x1, y1, x2, y2 = line[0]
+            cv2.line(filtered_line_image, (x1, y1), (x2, y2), (0, 0, 255), 2)  # Red for vertical lines
+        cv2.imshow('Lines Court', filtered_line_image)
+        cv2.waitKey(0)'''
+
         # Compute intersections between horizontal and vertical lines
         intersections = []
         for h_line in horizontal_lines:
@@ -223,14 +236,37 @@ while True:
                 if point is not None and point[0] >= 50 and point[1] >= 50 and point[0] <= frame.shape[1] - 50 and point[1] <= frame.shape[0] - 50:
                     intersections.append(point)
 
+        # Visualize intersections
+        '''intersection_image = frame.copy()
+        for point in intersections:
+            x, y = map(int, point)
+            cv2.circle(intersection_image, (x, y), 5, (255, 0, 0), -1)
+        cv2.imshow('Intersections', intersection_image)
+        cv2.waitKey(0)'''
+
         # Cluster intersections to find four corners
         points = np.array(intersections)
-        n_clusters = 39
+        n_clusters = 35
+        
 
         if len(points) >= n_clusters:
             
             kmeans = KMeans(n_clusters=n_clusters, random_state=0).fit(points)
             corner_points = kmeans.cluster_centers_
+
+            # Visualize clustered corners
+            '''cluster_image = frame.copy()
+            colors = create_color_list(n_clusters)
+            labels = kmeans.labels_
+            for idx, point in enumerate(points):
+                x, y = map(int, point)
+                cluster_idx = labels[idx]
+                cv2.circle(cluster_image, (x, y), 5, colors[cluster_idx], -1)
+            for idx, center in enumerate(corner_points):
+                x, y = map(int, center)
+                cv2.circle(cluster_image, (x, y), 10, colors[idx], 2)
+            cv2.imshow('Clustered Corners', cluster_image)
+            cv2.waitKey(0)'''
 
             # Order corner points
             src_points = select_corners(corner_points)
@@ -398,10 +434,10 @@ while True:
 
 gray = cv2.cvtColor(rectified_frame, cv2.COLOR_BGR2GRAY)
 blur = cv2.GaussianBlur(gray, (5, 5), 0)
-edges = cv2.Canny(blur, 50, 100)
+edges = cv2.Canny(blur, 40, 100)
     
 # Apply Hough Line Transform
-lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=30, minLineLength=100, maxLineGap=10)
+lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=20, minLineLength=110, maxLineGap=10)
 line_image = rectified_frame.copy()
 if lines is not None:
     for line in lines:
@@ -483,12 +519,13 @@ for i in range(len(intersections)):
         point2 = intersections[j]
         
         # Check if the line is horizontal or vertical
-        if (point1[0] == point2[0] or point1[1] == point2[1]) and point1[1] > 160  and point2[1] > 160:  # Vertical or horizontal check
+        if (point1[0] == point2[0] or (point1[1] < point2[1] + 3 and point1[1] > point2[1] - 3))  and point1[1] > 120  and point2[1] > 120:  # Vertical or horizontal check
             point1 = tuple(map(int, point1))
             point2 = tuple(map(int, point2))
             cv2.line(heatmap_djokovic_colored, point1, point2, (255, 255, 255), 2)
             cv2.line(heatmap_sinner_colored, point1, point2, (255, 255, 255), 2)
             cv2.line(heatmap_ball_colored, point1, point2, (255, 255, 255), 2)
+
 
 cv2.imshow('Heatmap Djokovic', heatmap_djokovic_colored)
 cv2.waitKey(0)
