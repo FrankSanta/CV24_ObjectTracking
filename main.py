@@ -61,8 +61,8 @@ def on_press(key):
         key = key.char
     except AttributeError:
         print(f"\n\nERROR: Special key {key} pressed\n\n")
-        exit_flag = True
-        return False
+        #exit_flag = True
+        #return False
     if key == "f":
         f_pressed = True
     if key == "s":
@@ -434,7 +434,7 @@ while True:
 
 gray = cv2.cvtColor(rectified_frame, cv2.COLOR_BGR2GRAY)
 blur = cv2.GaussianBlur(gray, (5, 5), 0)
-edges = cv2.Canny(blur, 40, 100)
+edges = cv2.Canny(blur, 50, 120)
     
 # Apply Hough Line Transform
 lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=20, minLineLength=110, maxLineGap=10)
@@ -445,16 +445,22 @@ if lines is not None:
         cv2.line(line_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
 horizontal_lines, vertical_lines = filter_lines(lines)
+delete_list = list()
 # Visualize filtered lines
 filtered_line_image = rectified_frame.copy()
-for line in horizontal_lines:
+for i, line in enumerate(horizontal_lines):
     x1, y1, x2, y2 = line[0]
+    if y1 < 120 or y2 < 120:
+        delete_list.append(i)
+        continue
     cv2.line(filtered_line_image, (x1, y1), (x2, y2), (255, 0, 0), 2)  # Blue for horizontal lines
 for line in vertical_lines:
     x1, y1, x2, y2 = line[0]
     cv2.line(filtered_line_image, (x1, y1), (x2, y2), (0, 0, 255), 2)  # Red for vertical lines
 cv2.imshow('Lines Court', filtered_line_image)
 cv2.waitKey(0)
+
+horizontal_lines = [line for i, line in enumerate(horizontal_lines) if i not in delete_list]
 
 # Compute intersections between horizontal and vertical lines
 intersections = []
@@ -470,7 +476,29 @@ intersection_image = rectified_frame.copy()
 for point in intersections:
     x, y = map(int, point)
     cv2.circle(intersection_image, (x, y), 5, (255, 0, 0), -1)
-cv2.imshow('Intersections', intersection_image)
+#cv2.imshow('Intersections', intersection_image)
+#cv2.waitKey(0)
+
+# Cluster intersections to find four corners
+points = np.array(intersections)
+n_clusters = 30
+
+    
+kmeans = KMeans(n_clusters=n_clusters, random_state=0).fit(points)
+corner_points = kmeans.cluster_centers_
+
+# Visualize clustered corners
+cluster_image = rectified_frame.copy()
+colors = create_color_list(n_clusters)
+labels = kmeans.labels_
+for idx, point in enumerate(points):
+    x, y = map(int, point)
+    cluster_idx = labels[idx]
+    cv2.circle(cluster_image, (x, y), 5, colors[cluster_idx], -1)
+for idx, center in enumerate(corner_points):
+    x, y = map(int, center)
+    cv2.circle(cluster_image, (x, y), 10, colors[idx], 2)
+cv2.imshow('Clustered Corners', cluster_image)
 cv2.waitKey(0)
 
 # Initialize a heatmap array with zeros
