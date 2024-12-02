@@ -20,7 +20,7 @@ class ObjectDetection:
         self.colors = np.random.uniform(0, 255, size=(len(self.classes), 3))
 
     def detect(self, frame):
-        results = self.model(frame, imgsz=self.image_size, conf=self.confThreshold, iou=self.iouThreshold)
+        results = self.model(frame, imgsz=self.image_size, conf=self.confThreshold, iou=self.iouThreshold, verbose=False)
         
         detections = results[0]  # YOLOv8 returns a list, take the first (single frame detection)
         boxes = detections.boxes.xyxy.cpu().numpy()  # Convert to NumPy array: [x_min, y_min, x_max, y_max]
@@ -148,7 +148,7 @@ def select_corners(corner_points):
     points = np.array(points)
     sorted_points = points[points[:, 0].argsort()] 
     sorted_points = sorted_points[sorted_points[:, 1].argsort(kind='mergesort')]
-    print(sorted_points)
+    #print(sorted_points)
     selected_points = np.array([
     [sorted_points[0][0], sorted_points[0][1]],
     [sorted_points[1][0], sorted_points[1][1]],
@@ -255,7 +255,7 @@ while True:
             corner_points = kmeans.cluster_centers_
 
             # Visualize clustered corners
-            '''cluster_image = frame.copy()
+            cluster_image = frame.copy()
             colors = create_color_list(n_clusters)
             labels = kmeans.labels_
             for idx, point in enumerate(points):
@@ -265,8 +265,8 @@ while True:
             for idx, center in enumerate(corner_points):
                 x, y = map(int, center)
                 cv2.circle(cluster_image, (x, y), 10, colors[idx], 2)
-            cv2.imshow('Clustered Corners', cluster_image)
-            cv2.waitKey(0)'''
+            #cv2.imshow('Clustered Corners', cluster_image)
+            #cv2.waitKey(0)
 
             # Order corner points
             src_points = select_corners(corner_points)
@@ -434,10 +434,10 @@ while True:
 
 gray = cv2.cvtColor(rectified_frame, cv2.COLOR_BGR2GRAY)
 blur = cv2.GaussianBlur(gray, (5, 5), 0)
-edges = cv2.Canny(blur, 50, 120)
+edges = cv2.Canny(blur, 50, 150)
     
 # Apply Hough Line Transform
-lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=20, minLineLength=110, maxLineGap=10)
+lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=20, minLineLength=80, maxLineGap=10)
 line_image = rectified_frame.copy()
 if lines is not None:
     for line in lines:
@@ -457,8 +457,8 @@ for i, line in enumerate(horizontal_lines):
 for line in vertical_lines:
     x1, y1, x2, y2 = line[0]
     cv2.line(filtered_line_image, (x1, y1), (x2, y2), (0, 0, 255), 2)  # Red for vertical lines
-cv2.imshow('Lines Court', filtered_line_image)
-cv2.waitKey(0)
+#cv2.imshow('Lines Court', filtered_line_image)
+#cv2.waitKey(0)
 
 horizontal_lines = [line for i, line in enumerate(horizontal_lines) if i not in delete_list]
 
@@ -472,23 +472,23 @@ for h_line in horizontal_lines:
         intersections.append(point)
 
 # Visualize intersections
-intersection_image = rectified_frame.copy()
+''''intersection_image = rectified_frame.copy()
 for point in intersections:
     x, y = map(int, point)
     cv2.circle(intersection_image, (x, y), 5, (255, 0, 0), -1)
-#cv2.imshow('Intersections', intersection_image)
-#cv2.waitKey(0)
+cv2.imshow('Intersections', intersection_image)
+cv2.waitKey(0)'''
 
 # Cluster intersections to find four corners
 points = np.array(intersections)
-n_clusters = 30
+n_clusters = 25
 
     
 kmeans = KMeans(n_clusters=n_clusters, random_state=0).fit(points)
 corner_points = kmeans.cluster_centers_
 
 # Visualize clustered corners
-cluster_image = rectified_frame.copy()
+'''cluster_image = rectified_frame.copy()
 colors = create_color_list(n_clusters)
 labels = kmeans.labels_
 for idx, point in enumerate(points):
@@ -499,7 +499,7 @@ for idx, center in enumerate(corner_points):
     x, y = map(int, center)
     cv2.circle(cluster_image, (x, y), 10, colors[idx], 2)
 cv2.imshow('Clustered Corners', cluster_image)
-cv2.waitKey(0)
+cv2.waitKey(0)'''
 
 # Initialize a heatmap array with zeros
 heatmap_djokovic = np.zeros((height, width), dtype=np.float32)
@@ -541,10 +541,25 @@ heatmap_djokovic_colored = cv2.applyColorMap(heatmap_djokovic_uint8, cv2.COLORMA
 heatmap_sinner_colored = cv2.applyColorMap(heatmap_sinner_uint8, cv2.COLORMAP_JET)
 heatmap_ball_colored = cv2.applyColorMap(heatmap_ball_uint8, cv2.COLORMAP_JET)
 
-for i in range(len(intersections)):
-    for j in range(i + 1, len(intersections)):
-        point1 = intersections[i]
-        point2 = intersections[j]
+for i in range(len(corner_points)):
+    for j in range(i + 1, len(corner_points)):
+        point1 = corner_points[i]
+        point2 = corner_points[j]
+
+        x1, y1 = point1
+        x2, y2 = point2
+
+        if abs(y1 - 165) < 10 and abs(x1 - 100) < 30:
+            continue
+        
+        if abs(y2 - 165) < 10 and abs(x2 - 100) < 30:
+            continue
+
+        if abs(y1 - 450) < 30 and abs(x1 - 100) < 30:
+            continue
+        
+        if abs(y2 - 450) < 30 and abs(x2 - 100) < 30:
+            continue
         
         # Check if the line is horizontal or vertical
         if (point1[0] == point2[0] or (point1[1] < point2[1] + 3 and point1[1] > point2[1] - 3))  and point1[1] > 120  and point2[1] > 120:  # Vertical or horizontal check
