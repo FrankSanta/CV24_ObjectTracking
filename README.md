@@ -1,6 +1,8 @@
 # CV24_ObjectTracking
 
-Course: Computer Vision, Fall 2024, UIC
+Project for the Computer Vision course at UIC Chicago
+
+Semester: Fall 2024
 
 Instructor: Professor Wei Tang
 
